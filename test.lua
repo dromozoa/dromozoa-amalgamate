@@ -26,5 +26,5 @@ assert(test1 == 1)
 assert(test2 == 2)
 assert(test3 == 3)
 assert(test4 == 4)
-
+assert(arg[1] == nil)
 os.exit(0)

@@ -40,7 +40,7 @@ while i <= #arg do
     i = i + 1
     break
   else
-    break
+    error("bad argument #" .. i)
   end
 end
 local index = i
@@ -49,9 +49,13 @@ local backup ={
   require = require;
   package = { searchers = {} };
   os = { exit = os.exit };
+  arg = {}
 }
-for i = 2, #package.searchers do
-  backup.package.searchers[i] = package.searchers[i]
+for k, v in pairs(package.searchers) do
+  backup.package.searchers[k] = v
+end
+for k, v in pairs(arg) do
+  backup.arg[k] = v
 end
 
 local stack = {
@@ -112,13 +116,26 @@ for i = 1, #module do
   assert(result or message == exit_success, message)
 end
 if script ~= nil then
-  local result, message = pcall(assert(loadfile(script)), unpack(arg, index))
+  for k, v in pairs(arg) do
+    arg[k] = nil
+  end
+  arg[-1] = "lua"
+  arg[0] = script
+  for i = index, #backup.arg do
+    arg[i + 1 - index] = backup.arg[i]
+  end
+
+  local result, message = pcall(assert(loadfile(script)), unpack(arg))
   assert(result or message == exit_success, message)
+
+  for k, v in pairs(backup.arg) do
+    arg[k] = v
+  end
 end
 
 require = backup.require
-for i = 2, #package.searchers do
-  package.searchers[i] = backup.package.searchers[i]
+for k, v in pairs(backup.package.searchers) do
+  package.searchers[k] = v
 end
 os.exit = backup.os.exit
 
