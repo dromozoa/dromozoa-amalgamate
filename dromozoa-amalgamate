@@ -20,7 +20,7 @@
 assert(package.searchers)
 
 local format = string.format
-local unpack = table.unpack
+local unpack = table.unpack or unpack
 
 local output
 local module = {}
