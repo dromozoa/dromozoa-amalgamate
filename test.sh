@@ -17,4 +17,20 @@
 # You should have received a copy of the GNU General Public License
 # along with dromozoa-amalgamate.  If not, see <http://www.gnu.org/licenses/>.
 
-lua dromozoa-amalgamate -s test.lua | env LUA_PATH= LUA_CPATH= lua
+case x$TMPDIR in
+  x) TMPDIR=/tmp;;
+esac
+tmp=`(umask 077 && mktemp -d "$TMPDIR/dromozoa-XXXXXX" 2>/dev/null || :)`
+case x$tmp in
+  x) tmp=$TMPDIR/dromozoa-$$-$RANDOM; (umask 077 && mkdir "$tmp");;
+esac
+tmp=`(cd "$tmp" && pwd)`
+trap "(cd / && rm -f -r '$tmp')" 0
+
+lua dromozoa-amalgamate -s dromozoa-amalgamate >"$tmp/dromozoa-amalgamate"
+diff -u dromozoa-amalgamate "$tmp/dromozoa-amalgamate"
+
+lua dromozoa-amalgamate -s test.lua >"$tmp/test1.lua"
+env LUA_PATH= LUA_CPATH= lua "$tmp/test1.lua"
+lua dromozoa-amalgamate -s "$tmp/test1.lua" >"$tmp/test2.lua"
+diff -u "$tmp/test1.lua" "$tmp/test2.lua"

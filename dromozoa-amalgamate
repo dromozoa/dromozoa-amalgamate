@@ -148,9 +148,7 @@ end
 
 local function amalgamate(path)
   local handle = assert(io.open(path))
-  out:write("--------------------------------------------------------------------------------\n")
-  out:write(handle:read("*a"):gsub("^#!.-\n", ""):gsub("^%s+", ""):gsub("%s+$", ""), "\n")
-  out:write("--------------------------------------------------------------------------------\n")
+  out:write((handle:read("*a"):gsub("^#!.-\n", "")))
   handle:close()
 end
 
