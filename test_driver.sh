@@ -17,13 +17,20 @@
 # You should have received a copy of the GNU General Public License
 # along with dromozoa-amalgamate.  If not, see <http://www.gnu.org/licenses/>.
 
-./test_driver.sh ./dromozoa-amalgamate
-./test_driver.sh lua dromozoa-amalgamate
+case x$TMPDIR in
+  x) TMPDIR=/tmp;;
+esac
+tmp=`(umask 077 && mktemp -d "$TMPDIR/dromozoa-XXXXXX" 2>/dev/null || :)`
+case x$tmp in
+  x) tmp=$TMPDIR/dromozoa-$$-$RANDOM; (umask 077 && mkdir "$tmp");;
+esac
+tmp=`(cd "$tmp" && pwd)`
+trap "(cd / && rm -f -r '$tmp')" 0
 
-r='require "luarocks.loader"'
-p='print("#package.searchers", #package.searchers)'
-if lua -e "$r" >/dev/null 2>&1
-then
-  lua -e "$p" -e "$r" -e "$p"
-  ./test_driver.sh lua -e "$r" dromozoa-amalgamate
-fi
+"$@" -s dromozoa-amalgamate >"$tmp/dromozoa-amalgamate"
+diff -u dromozoa-amalgamate "$tmp/dromozoa-amalgamate"
+
+"$@" -s test.lua >"$tmp/test1.lua"
+env LUA_PATH= LUA_CPATH= lua "$tmp/test1.lua"
+"$@" -s "$tmp/test1.lua" >"$tmp/test2.lua"
+diff -u "$tmp/test1.lua" "$tmp/test2.lua"

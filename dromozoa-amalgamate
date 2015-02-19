@@ -80,26 +80,28 @@ require = function (name)
   return result
 end
 
-local function searcher_result(index, name, loader, ...)
+local function searcher_result(name, loader, ...)
   if type(loader) == "function" then
-    local loaded = stack[#stack].loaded
-    loaded[#loaded + 1] = {
-      index = index;
-      name = name;
-      path = select(-1, ...);
-    }
+    local path = tostring(select(-1, ...))
+    if path:match("%.lua$") then
+      local loaded = stack[#stack].loaded
+      loaded[#loaded + 1] = {
+        name = name;
+        path = path;
+      }
+    end
   end
   return loader, ...
 end
 
 local function searcher(index)
   return function (name, ...)
-    return searcher_result(index, name, backup.package.searchers[index](name, ...))
+    return searcher_result(name, backup.package.searchers[index](name, ...))
   end
 end
 
-for i = 2, #package.searchers do
-  package.searchers[i] = searcher(i)
+for k, v in pairs(package.searchers) do
+  package.searchers[k] = searcher(k)
 end
 
 local exit_success = {}
@@ -167,11 +169,9 @@ local function amalgamate_module(this)
   local loaded = this.loaded
   for i = 1, #loaded do
     local v = loaded[i]
-    if v.index == 2 then
-      out:write(format("package.loaded[%q] = (function ()\n", v.name))
-      amalgamate(v.path)
-      out:write("end)()\n")
-    end
+    out:write(format("package.loaded[%q] = (function ()\n", v.name))
+    amalgamate(v.path)
+    out:write("end)()\n")
   end
 end
 
