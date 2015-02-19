@@ -19,8 +19,8 @@ local format = string.format
 local unpack = table.unpack
 
 local output
-local source_module = {}
-local source_script
+local module = {}
+local script
 
 local i = 1
 while i <= #arg do
@@ -29,10 +29,10 @@ while i <= #arg do
     output = b
     i = i + 2
   elseif a == "-r" then
-    source_module[#source_module+ 1] = b
+    module[#module+ 1] = b
     i = i + 2
   elseif a == "-s" then
-    source_script = b
+    script = b
     i = i + 2
   elseif a == "--" then
     i = i + 1
@@ -43,20 +43,39 @@ while i <= #arg do
 end
 local index = i
 
-local searchers = {}
+local backup ={
+  require = require;
+  package = { searchers = {} };
+  os = { exit = os.exit };
+}
 for i = 2, #package.searchers do
-  searchers[i] = package.searchers[i]
+  backup.package.searchers[i] = package.searchers[i]
 end
 
-local exit = os.exit
-local exit_success = { "EXIT_SUCCESS" }
-local exit_failure = { "EXIT_FAILURE" }
+local stack = {
+  {
+    required = {};
+    loaded = {};
+  };
+}
 
-local required_module = {}
+require = function (name)
+  local required = stack[#stack].required
+  required[#required + 1] = {
+    name = name;
+    required = {};
+    loaded = {};
+  }
+  stack[#stack + 1] = required[#required]
+  local result = backup.require(name)
+  stack[#stack] = nil;
+  return result
+end
 
-local function searcher_filter(index, name, loader, ...)
+local function searcher_result(index, name, loader, ...)
   if type(loader) == "function" then
-    required_module[#required_module + 1] = {
+    local loaded = stack[#stack].loaded
+    loaded[#loaded + 1] = {
       index = index;
       name = name;
       path = select(-1, ...);
@@ -67,7 +86,7 @@ end
 
 local function searcher(index)
   return function (name, ...)
-    return searcher_filter(index, name, searchers[index](name, ...))
+    return searcher_result(index, name, backup.package.searchers[index](name, ...))
   end
 end
 
@@ -86,26 +105,20 @@ os.exit = function (code)
   end
 end
 
-for i = 1, #source_module do
-  local result, message = pcall(require, source_module[i])
-  assert(result or message == exit_success)
+for i = 1, #module do
+  local result, message = pcall(require, module[i])
+  assert(result or message == exit_success, message)
 end
-if source_script ~= nil then
-  local result, message = pcall(assert(loadfile(source_script)), unpack(arg, index))
-  assert(result or message == exit_success)
+if script ~= nil then
+  local result, message = pcall(assert(loadfile(script)), unpack(arg, index))
+  assert(result or message == exit_success, message)
 end
 
+require = backup.require
 for i = 2, #package.searchers do
-  package.searchers[i] = searchers[i]
+  package.searchers[i] = backup.package.searchers[i]
 end
-os.exit = exit
-
-local function read_code(path)
-  local handle = assert(io.open(path))
-  local code = handle:read("*a"):gsub("^#!.-\n", ""):gsub("^%s+", ""):gsub("%s+$", "")
-  handle:close()
-  return code
-end
+os.exit = backup.os.exit
 
 local out
 if output == nil then
@@ -114,29 +127,35 @@ else
   out = assert(io.open(output, "w"))
 end
 
-if source_script ~= nil then
-  out:write("#! /usr/bin/env lua\n")
+local function amalgamate(path)
+  local handle = assert(io.open(path))
+  out:write("--------------------------------------------------------------------------------\n")
+  out:write(handle:read("*a"):gsub("^#!.-\n", ""):gsub("^%s+", ""):gsub("%s+$", ""), "\n")
+  out:write("--------------------------------------------------------------------------------\n")
+  handle:close()
 end
 
-for i = 1, #required_module do
-  local v = required_module[i]
-  if v.index == 2 then
-    out:write(string.format([[
-package.loaded[%q] = (function ()
--- ===========================================================================
-%s
--- ===========================================================================
-end)()
-]], v.name, read_code(v.path)))
+local function amalgamate_module(this)
+  local required = this.required
+  for i = 1, #required do
+    local v = required[i]
+    amalgamate_module(required[i])
+  end
+  local loaded = this.loaded
+  for i = 1, #loaded do
+    local v = loaded[i]
+    if v.index == 2 then
+      out:write(format("package.loaded[%q] = (function ()\n", v.name))
+      amalgamate(v.path)
+      out:write("end)()\n")
+    end
   end
 end
 
-if source_script ~= nil then
-  out:write(string.format([[
--- ===========================================================================
-%s
--- ===========================================================================
-]], read_code(source_script)))
+if script == nil then
+  amalgamate_module(stack[1])
+else
+  out:write("#! /usr/bin/env lua\n")
+  amalgamate_module(stack[1])
+  amalgamate(script)
 end
-
-out:close()
