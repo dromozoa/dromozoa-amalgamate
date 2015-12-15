@@ -17,52 +17,28 @@
 -- You should have received a copy of the GNU General Public License
 -- along with dromozoa-amalgamate.  If not, see <http://www.gnu.org/licenses/>.
 
-local loadstring = loadstring or load
-local unpack = unpack or table.unpack
+local package_loaded = {}
 
-local searchers = package.loaders or package.searchers
+for k, v in pairs(package.loaded) do
+  package_loaded[k] = v
+end
 
-local sequence = (function ()
-  local class = {}
+local loadstring = require "dromozoa.commons.loadstring"
+local read_file = require "dromozoa.commons.read_file"
+local searchpath = require "dromozoa.commons.searchpath"
+local sequence = require "dromozoa.commons.sequence"
+local unpack = require "dromozoa.commons.unpack"
 
-  function class.new()
-    return {}
-  end
+for k, v in pairs(package.loaded) do
+  package.loaded[k] = package_loaded[k]
+end
 
-  function class:top()
-    return self[#self]
-  end
-
-  function class:push(v)
-    self[#self + 1] = v
-    return self
-  end
-
-  function class:pop()
-    local n = #self
-    local v = self[n]
-    self[n] = nil
-    return v
-  end
-
-  function class:each()
-    return coroutine.wrap(function ()
-      for _, v in ipairs(self) do
-        coroutine.yield(v)
-      end
-    end)
-  end
-
-  local metatable = {
-    __index = class;
-  }
-
-  return setmetatable(class, {
-    __call = function ()
-      return setmetatable(class.new(), metatable)
-    end;
-  })
-end)()
+local searchers
+if _VERSION >= "Lua 5.2" then
+  searchers = package.searchers
+else
+  searchers = package.loaders
+end
 
 local function copy(this, that)
   for k, v in pairs(that) do
@@ -211,9 +187,6 @@ copy(searchers, context.searchers)
 require = context.require
 os.exit = context.exit
 
-local read_file = require "dromozoa.commons.read_file"
-local searchpath = require "dromozoa.commons.searchpath"
-
 local out
 if output == nil then
   out = io.stdout
@@ -232,6 +205,7 @@ local function amalgamate(this)
       filename = searchpath(modname, package.path)
     end
     if filename ~= nil and filename:find("%.lua$") then
+      out:write("dromozoa_amalgamate_loaded = true\n")
       out:write(("package.loaded[%q] = (function ()\n"):format(modname))
       out:write(remove_hashbang(read_file(filename)))
       out:write("end)()\n")
