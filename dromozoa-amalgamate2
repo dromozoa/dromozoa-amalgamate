@@ -1,0 +1,103 @@
+#! /usr/bin/env lua
+
+-- Copyright (C) 2015 Tomoyuki Fujimori <moyu@dromozoa.com>
+--
+-- This file is part of dromozoa-amalgamate.
+--
+-- dromozoa-amalgamate is free software: you can redistribute it and/or modify
+-- it under the terms of the GNU General Public License as published by
+-- the Free Software Foundation, either version 3 of the License, or
+-- (at your option) any later version.
+--
+-- dromozoa-amalgamate is distributed in the hope that it will be useful,
+-- but WITHOUT ANY WARRANTY; without even the implied warranty of
+-- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+-- GNU General Public License for more details.
+--
+-- You should have received a copy of the GNU General Public License
+-- along with dromozoa-amalgamate.  If not, see <http://www.gnu.org/licenses/>.
+
+local json = require "dromozoa.commons.json"
+local split = require "dromozoa.commons.split"
+local dumper = require "dromozoa.commons.dumper"
+local sequence = require "dromozoa.commons.sequence"
+local sequence_writer = require "dromozoa.commons.sequence_writer"
+local pairs = require "dromozoa.commons.pairs"
+
+local searchpath
+
+if _VERSION >= "Lua 5.2" then
+  searchpath = package.searchpath
+else
+  searchpath = function (name, path, sep, rep)
+    if sep == nil then
+      sep = "%."
+    else
+      sep = sep:gsub("%A", "%%%1")
+    end
+    if rep == nil then
+      rep = "/"
+    end
+    if sep ~= "" then
+      name = name:gsub(sep, rep)
+    end
+    local out = sequence_writer()
+    for path in split(path, "%;"):each() do
+      local filename = path:gsub("%?", name)
+      local handle = io.open(filename)
+      if handle ~= nil then
+        handle:close()
+        return filename
+      else
+        out:write("\n\tno file '", filename, "'")
+      end
+    end
+    return nil, out:concat()
+  end
+end
+
+print(package.path)
+print(searchpath("dromozoa.commons.sha384", package.path))
+
+os.exit()
+
+local backup_require = require
+local searchers = package.loaders or package.searchers
+for i = 1, #searchers do
+  print(i, searchers[i])
+end
+print(package.path)
+
+local stack = sequence()
+
+require = function (modname)
+  io.write(("  "):rep(#stack), modname, "\n")
+  stack:push(modname)
+  local result = backup_require(modname)
+  stack:pop()
+  return result
+end
+
+local function wrap_searcher(a, b, c, ...)
+  if type(a) == "string" then
+    print("wrap_searcher", json.encode(a), b, c)
+  else
+    print("wrap_searcher", type(a), b, c)
+  end
+  return a, b, c, ...
+end
+
+for k, v in pairs(searchers) do
+  local searcher = searchers[k]
+  searchers[k] = function (modname, ...)
+    -- print("searcher", k, modname)
+    return wrap_searcher(searcher(modname, ...))
+  end;
+end
+
+for i = 1, #arg do
+  local modname = arg[i]
+  require(modname)
+end
+
+
