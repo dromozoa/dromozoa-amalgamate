@@ -20,46 +20,10 @@
 local json = require "dromozoa.commons.json"
 local split = require "dromozoa.commons.split"
 local dumper = require "dromozoa.commons.dumper"
+local searchpath = require "dromozoa.commons.searchpath"
 local sequence = require "dromozoa.commons.sequence"
 local sequence_writer = require "dromozoa.commons.sequence_writer"
 local pairs = require "dromozoa.commons.pairs"
-
-local searchpath
-
-if _VERSION >= "Lua 5.2" then
-  searchpath = package.searchpath
-else
-  searchpath = function (name, path, sep, rep)
-    if sep == nil then
-      sep = "%."
-    else
-      sep = sep:gsub("%A", "%%%1")
-    end
-    if rep == nil then
-      rep = "/"
-    end
-    if sep ~= "" then
-      name = name:gsub(sep, rep)
-    end
-    local out = sequence_writer()
-    for path in split(path, "%;"):each() do
-      local filename = path:gsub("%?", name)
-      local handle = io.open(filename)
-      if handle ~= nil then
-        handle:close()
-        return filename
-      else
-        out:write("\n\tno file '", filename, "'")
-      end
-    end
-    return nil, out:concat()
-  end
-end
-
-print(package.path)
-print(searchpath("dromozoa.commons.sha384", package.path))
-
-os.exit()
 
 local backup_require = require
 local searchers = package.loaders or package.searchers
@@ -78,20 +42,23 @@ require = function (modname)
   return result
 end
 
-local function wrap_searcher(a, b, c, ...)
-  if type(a) == "string" then
-    print("wrap_searcher", json.encode(a), b, c)
-  else
-    print("wrap_searcher", type(a), b, c)
+local function wrap_searcher(modname, loader, filename, ...)
+  if type(loader) == "function" then
+    if filename == nil then
+      filename = searchpath(modname, package.path)
+    end
+    if filename ~= nil and filename:match("%.lua$") then
+      print(modname, filename)
+    end
   end
-  return a, b, c, ...
+  return loader, filename, ...
 end
 
 for k, v in pairs(searchers) do
   local searcher = searchers[k]
   searchers[k] = function (modname, ...)
     -- print("searcher", k, modname)
-    return wrap_searcher(searcher(modname, ...))
+    return wrap_searcher(modname, searcher(modname, ...))
   end;
 end
 
