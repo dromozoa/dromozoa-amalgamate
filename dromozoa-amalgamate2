@@ -17,54 +17,220 @@
 -- You should have received a copy of the GNU General Public License
 -- along with dromozoa-amalgamate.  If not, see <http://www.gnu.org/licenses/>.
 
-local json = require "dromozoa.commons.json"
-local split = require "dromozoa.commons.split"
-local dumper = require "dromozoa.commons.dumper"
-local searchpath = require "dromozoa.commons.searchpath"
-local sequence = require "dromozoa.commons.sequence"
-local sequence_writer = require "dromozoa.commons.sequence_writer"
-local pairs = require "dromozoa.commons.pairs"
+local loadstring = loadstring or load
+local unpack = unpack or table.unpack
 
-local backup_require = require
 local searchers = package.loaders or package.searchers
-for i = 1, #searchers do
-  print(i, searchers[i])
+
+local sequence = (function ()
+  local class = {}
+
+  function class.new()
+    return {}
+  end
+
+  function class:top()
+    return self[#self]
+  end
+
+  function class:push(v)
+    self[#self + 1] = v
+    return self
+  end
+
+  function class:pop()
+    local n = #self
+    local v = self[n]
+    self[n] = nil
+    return v
+  end
+
+  function class:each()
+    return coroutine.wrap(function ()
+      for _, v in ipairs(self) do
+        coroutine.yield(v)
+      end
+    end)
+  end
+
+  local metatable = {
+    __index = class;
+  }
+
+  return setmetatable(class, {
+    __call = function ()
+      return setmetatable(class.new(), metatable)
+    end;
+  })
+end)()
+
+local function copy(this, that)
+  for k, v in pairs(that) do
+    this[k] = v
+  end
+  return this
 end
-print(package.path)
 
-local stack = sequence()
+local context = {
+  arg = copy({}, arg);
+  searchers = copy({}, searchers);
+  require = require;
+  exit = os.exit;
+}
 
-require = function (modname)
-  io.write(("  "):rep(#stack), modname, "\n")
-  stack:push(modname)
-  local result = backup_require(modname)
-  stack:pop()
-  return result
-end
+local commands, output = (function ()
+  local commands = sequence()
+  local output
 
-local function wrap_searcher(modname, loader, filename, ...)
+  arg[-1] = "lua"
+  arg[0] = nil
+
+  local i = 1
+  local n = #arg
+  while i <= n do
+    local a, b = arg[i], arg[i + 1]
+    local c = a:match("^%-(.*)")
+    if c == nil then
+      break
+    else
+      if c == "e" then
+        commands:push(function ()
+          return pcall(assert(loadstring(b)))
+        end)
+        i = i + 2
+      elseif c == "l" then
+        commands:push(function ()
+          return pcall(require, b)
+        end)
+        i = i + 2
+      elseif c == "-" then
+        i = i + 1
+        break
+      elseif c == "" then
+        commands:push(function ()
+          return pcall(assert(loadfile()), unpack(arg))
+        end)
+        arg[0] = "-"
+        i = i + 1
+        break
+      elseif c == "o" then
+        output = b
+        i = i + 2
+      else
+        error("unrecognized option '" .. a .. "'")
+      end
+    end
+  end
+
+  if arg[0] == nil then
+    local a = arg[i]
+    if a ~= nil then
+      commands:push(function ()
+        return pcall(assert(loadfile(a)), unpack(arg))
+      end)
+      arg[0] = a
+      i = i + 1
+    end
+  end
+
+  local j = 0
+  for i = i, n do
+    j = j + 1
+    arg[j] = arg[i]
+  end
+  for i = j + 1, n do
+    arg[i] = nil
+  end
+
+  return commands, output
+end)()
+
+local stack = sequence():push({
+  require = sequence();
+  loader = sequence();
+})
+
+local function searcher(modname, loader, filename, ...)
   if type(loader) == "function" then
-    if filename == nil then
-      filename = searchpath(modname, package.path)
-    end
-    if filename ~= nil and filename:match("%.lua$") then
-      print(modname, filename)
-    end
+    stack:top().loader:push({
+      modname = modname;
+      filename = filename;
+    })
   end
   return loader, filename, ...
 end
 
 for k, v in pairs(searchers) do
-  local searcher = searchers[k]
   searchers[k] = function (modname, ...)
-    -- print("searcher", k, modname)
-    return wrap_searcher(modname, searcher(modname, ...))
-  end;
+    return searcher(modname, v(modname, ...))
+  end
 end
 
-for i = 1, #arg do
-  local modname = arg[i]
-  require(modname)
+require = function (modname)
+  local this = {
+    modname = modname;
+    require = sequence();
+    loader = sequence();
+  }
+  stack:top().require:push(this)
+  stack:push(this)
+  local result = context.require(modname)
+  stack:pop()
+  return result
 end
 
+local exit_success = function () end
+local exit_failure = "EXIT_FAILURE"
 
+os.exit = function (code)
+  if code == nil or code == 0 then
+    error(exit_success)
+  else
+    error(exit_failure)
+  end
+end
+
+for command in commands:each() do
+  local result, message = command()
+  if not result and message ~= exit_success then
+    error(message)
+  end
+end
+
+copy(arg, context.arg)
+copy(searchers, context.searchers)
+require = context.require
+os.exit = context.exit
+
+local read_file = require "dromozoa.commons.read_file"
+local searchpath = require "dromozoa.commons.searchpath"
+
+local out
+if output == nil then
+  out = io.stdout
+else
+  out = assert(io.open(output, "wb"))
+end
+
+local function amalgamate(this, depth)
+  for v in this.require:each() do
+    amalgamate(v, depth + 1)
+  end
+  for v in this.loader:each() do
+    local modname = v.modname
+    local filename = v.filename
+    if filename == nil then
+      filename = searchpath(modname, package.path)
+    end
+    if filename ~= nil and filename:find("%.lua$") then
+      out:write(("package.loaded[%q] = (function ()\n"):format(modname))
+      out:write((read_file(filename):gsub("^%!.-\n", "")))
+      out:write("end)()\n")
+    end
+  end
+end
+amalgamate(stack:top(), 0)
+
+if output ~= nil then
+  out:close()
+end
