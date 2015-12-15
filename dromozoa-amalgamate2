@@ -71,6 +71,10 @@ local function copy(this, that)
   return this
 end
 
+local function remove_hashbang(script)
+  return (script:gsub("^%#%![^\n]*\n", ""))
+end
+
 local context = {
   arg = copy({}, arg);
   searchers = copy({}, searchers);
@@ -78,6 +82,7 @@ local context = {
   exit = os.exit;
 }
 
+local script
 local commands, output = (function ()
   local commands = sequence()
   local output
@@ -108,7 +113,8 @@ local commands, output = (function ()
         break
       elseif c == "" then
         commands:push(function ()
-          return pcall(assert(loadfile()), unpack(arg))
+          script = remove_hashbang(io.read("*a"))
+          return pcall(assert(loadstring(script)), unpack(arg))
         end)
         arg[0] = "-"
         i = i + 1
@@ -126,7 +132,10 @@ local commands, output = (function ()
     local a = arg[i]
     if a ~= nil then
       commands:push(function ()
-        return pcall(assert(loadfile(a)), unpack(arg))
+        local handle = assert(io.open(a))
+        script = remove_hashbang(handle:read("*a"))
+        handle:close()
+        return pcall(assert(loadstring(script)), unpack(arg))
       end)
       arg[0] = a
       i = i + 1
@@ -212,9 +221,9 @@ else
   out = assert(io.open(output, "wb"))
 end
 
-local function amalgamate(this, depth)
+local function amalgamate(this)
   for v in this.require:each() do
-    amalgamate(v, depth + 1)
+    amalgamate(v)
   end
   for v in this.loader:each() do
     local modname = v.modname
@@ -224,12 +233,19 @@ local function amalgamate(this, depth)
     end
     if filename ~= nil and filename:find("%.lua$") then
       out:write(("package.loaded[%q] = (function ()\n"):format(modname))
-      out:write((read_file(filename):gsub("^%!.-\n", "")))
+      out:write(remove_hashbang(read_file(filename)))
       out:write("end)()\n")
     end
   end
 end
-amalgamate(stack:top(), 0)
+
+if script == nil then
+  amalgamate(stack:top())
+else
+  out:write("#! /usr/bin/env lua\n")
+  amalgamate(stack:top())
+  out:write(script)
+end
 
 if output ~= nil then
   out:close()
