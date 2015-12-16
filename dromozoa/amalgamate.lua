@@ -30,6 +30,8 @@ else
   searchers = package.loaders
 end
 
+local luarocks_loader = package.loaded["luarocks.loader"]
+
 local exit_success = function () end
 
 local help = [=[
@@ -61,7 +63,7 @@ local function clean(code)
   return code
 end
 
-local function searcher(stack, modname, loader, filename, ...)
+local function save(stack, modname, loader, filename, ...)
   if type(loader) == "function" then
     local filename = filename
     if filename == nil then
@@ -148,7 +150,7 @@ function class:setup_arg()
   end
 
   if empty(out) then
-    os.exit(0)
+    os.exit()
   end
 
   self.script = out:concat()
@@ -158,8 +160,12 @@ end
 function class:setup_searchers()
   local stack = self.stack
   for k, v in pairs(searchers) do
-    searchers[k] = function (modname, ...)
-      return searcher(stack, modname, v(modname, ...))
+    local searcher = function (modname, ...)
+      return save(stack, modname, v(modname, ...))
+    end
+    searchers[k] = searcher
+    if luarocks_loader ~= nil and luarocks_loader.luarocks_loader == v then
+      luarocks_loader.luarocks_loader = searcher
     end
   end
   return self
