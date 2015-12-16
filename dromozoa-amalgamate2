@@ -32,19 +32,14 @@ for k, v in pairs(package.loaded) do
 end
 
 local this = amalgamate()
-if not this:setup_arg() then
-  return
-end
-
-this:setup_searchers()
-this:setup_require()
-this:setup_exit()
-this:eval()
+  :setup_arg()
+  :setup_searchers()
+  :setup_require()
+  :setup_exit()
+  :eval()
 
 if this.output == nil then
   this:write(io.stdout)
 else
-  local out = assert(io.open(this.output, "wb"))
-  this:write(out)
-  out:close()
+  this:write(assert(io.open(this.output, "wb"))):close()
 end

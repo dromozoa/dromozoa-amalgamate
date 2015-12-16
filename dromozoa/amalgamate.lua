@@ -32,6 +32,16 @@ end
 
 local exit_success = function () end
 
+local help = [=[
+usage: dromozoa-amalgamate [options] [script [args]]
+Available options are:
+  -e stat  execute string 'stat'
+  -l name  require library 'name'
+  -o name  output to file 'name' (default is stdout)
+  --       stop handling options
+  -        stop handling options and execute stdin
+]=]
+
 local prolog = [[
 local dromozoa_amalgamate_package_loaded = {}
 for k, v in pairs(package.loaded) do
@@ -53,6 +63,7 @@ end
 
 local function searcher(stack, modname, loader, filename, ...)
   if type(loader) == "function" then
+    local filename = filename
     if filename == nil then
       filename = searchpath(modname, package.path)
     end
@@ -71,9 +82,7 @@ local function write(out, u)
     write(out, v)
   end
   for v in u.loader:each() do
-    out:write(("package.loaded[%q] = (function ()\n"):format(v.modname))
-    out:write(clean(read_file(v.filename)))
-    out:write("end)()\n")
+    out:write(("package.loaded[%q] = (function ()\n"):format(v.modname), clean(read_file(v.filename)), "end)()\n")
   end
 end
 
@@ -109,6 +118,9 @@ function class:setup_arg()
       elseif c == "l" then
         out:write(("_G[%q] = require(%q)\n"):format(b, b))
         i = i + 2
+      elseif c == "o" then
+        self.output = b
+        i = i + 2
       elseif c == "-" then
         i = i + 1
         break
@@ -117,11 +129,9 @@ function class:setup_arg()
         script = "-"
         i = i + 1
         break
-      elseif c == "o" then
-        self.output = b
-        i = i + 2
       else
-        error("unrecognized option '" .. a .. "'")
+        io.stderr:write("dromozoa-amalgamate: unrecognized option '", a, "'\n", help)
+        os.exit(1)
       end
     end
   end
@@ -138,12 +148,11 @@ function class:setup_arg()
   end
 
   if empty(out) then
-    return nil
-  else
-    local script = out:concat()
-    self.script = script
-    return script
+    os.exit(0)
   end
+
+  self.script = out:concat()
+  return self
 end
 
 function class:setup_searchers()
@@ -171,6 +180,7 @@ function class:setup_require()
     stack:pop()
     return result
   end
+  return self
 end
 
 function class:setup_exit()
