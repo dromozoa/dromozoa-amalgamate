@@ -23,183 +23,28 @@ for k, v in pairs(package.loaded) do
   package_loaded[k] = v
 end
 
-local loadstring = require "dromozoa.commons.loadstring"
-local read_file = require "dromozoa.commons.read_file"
-local searchpath = require "dromozoa.commons.searchpath"
-local sequence = require "dromozoa.commons.sequence"
-local sequence_writer = require "dromozoa.commons.sequence_writer"
-local unpack = require "dromozoa.commons.unpack"
+local amalgamate = require "dromozoa.amalgamate"
 
 for k, v in pairs(package.loaded) do
   package.loaded[k] = package_loaded[k]
 end
 
-local searchers
-if _VERSION >= "Lua 5.2" then
-  searchers = package.searchers
-else
-  searchers = package.loaders
-end
-
-local function copy(this, that)
-  for k, v in pairs(that) do
-    this[k] = v
-  end
-  return this
-end
-
-local function remove_hashbang(script)
-  return (script:gsub("^%#%![^\n]*\n", ""))
-end
-
-local context = {
-  arg = copy({}, arg);
-  searchers = copy({}, searchers);
-  require = require;
-  exit = os.exit;
-}
-
-local script, output = (function ()
-  local out = sequence_writer()
-  local output
-
-  arg[-1] = "lua"
-  arg[0] = nil
-
-  local i = 1
-  local n = #arg
-  while i <= n do
-    local a, b = arg[i], arg[i + 1]
-    local c = a:match("^%-(.*)")
-    if c == nil then
-      local handle = assert(io.open(a))
-      out:write(remove_hashbang(handle:read("*a")))
-      arg[0] = a
-      i = i + 1
-    else
-      if c == "e" then
-        out:write(b, "\n")
-        i = i + 2
-      elseif c == "l" then
-        out:write(("_ENV[%q] = require(%q)\n"):format(b, b))
-        i = i + 2
-      elseif c == "-" then
-        i = i + 1
-        break
-      elseif c == "" then
-        out:write(remove_hashbang(io.read("*a")))
-        arg[0] = "-"
-        i = i + 1
-        break
-      elseif c == "o" then
-        output = b
-        i = i + 2
-      else
-        error("unrecognized option '" .. a .. "'")
-      end
-    end
-  end
-
-  local j = 0
-  for i = i, n do
-    j = j + 1
-    arg[j] = arg[i]
-  end
-  for i = j + 1, n do
-    arg[i] = nil
-  end
-
-  return out:concat(), output
-end)()
-
-if script == "" then
+local this = amalgamate()
+this:parse_arg()
+if this.script == "" then
   return
 end
 
-local stack = sequence():push({
-  require = sequence();
-  loader = sequence();
-})
+this:setup_searchers()
+this:setup_require()
+this:setup_exit()
+this:eval()
+this:restore()
 
-local function searcher(modname, loader, filename, ...)
-  if type(loader) == "function" then
-    stack:top().loader:push({
-      modname = modname;
-      filename = filename;
-    })
-  end
-  return loader, filename, ...
-end
-
-for k, v in pairs(searchers) do
-  searchers[k] = function (modname, ...)
-    return searcher(modname, v(modname, ...))
-  end
-end
-
-require = function (modname)
-  local this = {
-    modname = modname;
-    require = sequence();
-    loader = sequence();
-  }
-  stack:top().require:push(this)
-  stack:push(this)
-  local result = context.require(modname)
-  stack:pop()
-  return result
-end
-
-local exit_success = function () end
-
-os.exit = function (code)
-  if code == nil or code == 0 then
-    error(exit_success)
-  else
-    context.exit(code)
-  end
-end
-
-local result, message = pcall(assert(loadstring(script)), unpack(arg))
-if not result and message ~= exit_success then
-  error(message)
-end
-
-copy(arg, context.arg)
-copy(searchers, context.searchers)
-require = context.require
-os.exit = context.exit
-
-local out
-if output == nil then
-  out = io.stdout
+if this.output == nil then
+  this:write(io.stdout)
 else
-  out = assert(io.open(output, "wb"))
-end
-
-local function amalgamate(this)
-  for v in this.require:each() do
-    amalgamate(v)
-  end
-  for v in this.loader:each() do
-    local modname = v.modname
-    local filename = v.filename
-    if filename == nil then
-      filename = searchpath(modname, package.path)
-    end
-    if filename ~= nil and filename:find("%.lua$") then
-      out:write("dromozoa_amalgamate_loaded = true\n")
-      out:write(("package.loaded[%q] = (function ()\n"):format(modname))
-      out:write(remove_hashbang(read_file(filename)))
-      out:write("end)()\n")
-    end
-  end
-end
-
-out:write("#! /usr/bin/env lua\n")
-amalgamate(stack:top())
-out:write(script)
-
-if output ~= nil then
+  local out = assert(io.open(this.output, "wb"))
+  this:write(out)
   out:close()
 end
