@@ -17,10 +17,12 @@
 -- You should have received a copy of the GNU General Public License
 -- along with dromozoa-amalgamate.  If not, see <http://www.gnu.org/licenses/>.
 
-local package_loaded = {}
-
-for k, v in pairs(package.loaded) do
-  package_loaded[k] = v
+local package_loaded = dromozoa_amalgamate_package_loaded
+if package_loaded == nil then
+  package_loaded = {}
+  for k, v in pairs(package.loaded) do
+    package_loaded[k] = v
+  end
 end
 
 local amalgamate = require "dromozoa.amalgamate"
@@ -30,8 +32,7 @@ for k, v in pairs(package.loaded) do
 end
 
 local this = amalgamate()
-this:parse_arg()
-if this.script == "" then
+if not this:setup_arg() then
   return
 end
 
@@ -39,7 +40,6 @@ this:setup_searchers()
 this:setup_require()
 this:setup_exit()
 this:eval()
-this:restore()
 
 if this.output == nil then
   this:write(io.stdout)
