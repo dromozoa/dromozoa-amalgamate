@@ -1,8 +1,8 @@
 package = "dromozoa-amalgamate"
-version = "1.1-1"
+version = "1.2-1"
 source = {
-  url = "https://github.com/dromozoa/dromozoa-amalgamate/archive/v1.1.tar.gz";
-  file = "dromozoa-amalgamate-1.1.tar.gz";
+  url = "https://github.com/dromozoa/dromozoa-amalgamate/archive/v1.2.tar.gz";
+  file = "dromozoa-amalgamate-1.2.tar.gz";
 }
 description = {
   summary = "Amalgamation of Lua modules and scripts";
@@ -11,11 +11,13 @@ description = {
   maintainer = "Tomoyuki Fujimori <moyu@dromozoa.com>";
 }
 dependencies = {
-  "lua >= 5.2";
+  "dromozoa-commons";
 }
 build = {
   type = "builtin";
-  modules = {};
+  modules = {
+    ["dromozoa.amalgamate"] = "dromozoa/amalgamate.lua";
+  };
   install = {
     bin = {
       ["dromozoa-amalgamate"] = "dromozoa-amalgamate";
