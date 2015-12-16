@@ -27,6 +27,7 @@ local loadstring = require "dromozoa.commons.loadstring"
 local read_file = require "dromozoa.commons.read_file"
 local searchpath = require "dromozoa.commons.searchpath"
 local sequence = require "dromozoa.commons.sequence"
+local sequence_writer = require "dromozoa.commons.sequence_writer"
 local unpack = require "dromozoa.commons.unpack"
 
 for k, v in pairs(package.loaded) do
@@ -58,9 +59,8 @@ local context = {
   exit = os.exit;
 }
 
-local script
-local commands, output = (function ()
-  local commands = sequence()
+local script, output = (function ()
+  local out = sequence_writer()
   local output
 
   arg[-1] = "lua"
@@ -72,26 +72,22 @@ local commands, output = (function ()
     local a, b = arg[i], arg[i + 1]
     local c = a:match("^%-(.*)")
     if c == nil then
-      break
+      local handle = assert(io.open(a))
+      out:write(remove_hashbang(handle:read("*a")))
+      arg[0] = a
+      i = i + 1
     else
       if c == "e" then
-        commands:push(function ()
-          return pcall(assert(loadstring(b)))
-        end)
+        out:write(b, "\n")
         i = i + 2
       elseif c == "l" then
-        commands:push(function ()
-          return pcall(require, b)
-        end)
+        out:write(("_ENV[%q] = require(%q)\n"):format(b, b))
         i = i + 2
       elseif c == "-" then
         i = i + 1
         break
       elseif c == "" then
-        commands:push(function ()
-          script = remove_hashbang(io.read("*a"))
-          return pcall(assert(loadstring(script)), unpack(arg))
-        end)
+        out:write(remove_hashbang(io.read("*a")))
         arg[0] = "-"
         i = i + 1
         break
@@ -104,20 +100,6 @@ local commands, output = (function ()
     end
   end
 
-  if arg[0] == nil then
-    local a = arg[i]
-    if a ~= nil then
-      commands:push(function ()
-        local handle = assert(io.open(a))
-        script = remove_hashbang(handle:read("*a"))
-        handle:close()
-        return pcall(assert(loadstring(script)), unpack(arg))
-      end)
-      arg[0] = a
-      i = i + 1
-    end
-  end
-
   local j = 0
   for i = i, n do
     j = j + 1
@@ -127,8 +109,12 @@ local commands, output = (function ()
     arg[i] = nil
   end
 
-  return commands, output
+  return out:concat(), output
 end)()
+
+if script == "" then
+  return
+end
 
 local stack = sequence():push({
   require = sequence();
@@ -165,21 +151,18 @@ require = function (modname)
 end
 
 local exit_success = function () end
-local exit_failure = "EXIT_FAILURE"
 
 os.exit = function (code)
   if code == nil or code == 0 then
     error(exit_success)
   else
-    error(exit_failure)
+    context.exit(code)
   end
 end
 
-for command in commands:each() do
-  local result, message = command()
-  if not result and message ~= exit_success then
-    error(message)
-  end
+local result, message = pcall(assert(loadstring(script)), unpack(arg))
+if not result and message ~= exit_success then
+  error(message)
 end
 
 copy(arg, context.arg)
@@ -213,13 +196,9 @@ local function amalgamate(this)
   end
 end
 
-if script == nil then
-  amalgamate(stack:top())
-else
-  out:write("#! /usr/bin/env lua\n")
-  amalgamate(stack:top())
-  out:write(script)
-end
+out:write("#! /usr/bin/env lua\n")
+amalgamate(stack:top())
+out:write(script)
 
 if output ~= nil then
   out:close()
