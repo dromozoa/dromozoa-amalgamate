@@ -1,8 +1,8 @@
 package = "dromozoa-amalgamate"
-version = "1.2-1"
+version = "1.3-1"
 source = {
-  url = "https://github.com/dromozoa/dromozoa-amalgamate/archive/v1.2.tar.gz";
-  file = "dromozoa-amalgamate-1.2.tar.gz";
+  url = "https://github.com/dromozoa/dromozoa-amalgamate/archive/v1.3.tar.gz";
+  file = "dromozoa-amalgamate-1.3.tar.gz";
 }
 description = {
   summary = "Amalgamation of Lua modules and scripts";
